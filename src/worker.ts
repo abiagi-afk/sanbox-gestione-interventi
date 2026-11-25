@@ -9,11 +9,11 @@ import {
   markEmailOutboxError,
   markEmailOutboxSent,
   runWithNeonContext,
-} from './server/neonDb.ts';
+} from './server/d1Db.ts';
 
 export interface WorkerEnv {
   ASSETS: Fetcher;
-  NEON_DATABASE_URL: string;
+  DB: D1Database;
   GMAIL_CLIENT_ID: string;
   GMAIL_CLIENT_SECRET: string;
   GMAIL_REFRESH_TOKEN: string;
@@ -428,19 +428,14 @@ async function verifyBearerToken(
   return { token: idToken, user };
 }
 
-// Middleware globale: apre il contesto Neon per la richiesta e chiude il pool con waitUntil
+// Middleware globale: collega il database Cloudflare D1 della richiesta al contesto AsyncLocalStorage
 app.use('/api/*', async (c, next) => {
   c.header('X-API-Revision', API_REVISION);
   c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
 
-  const { promise, cleanup } = runWithNeonContext(c.env.NEON_DATABASE_URL, async () => {
+  await runWithD1Context(c.env.DB, async () => {
     await next();
   });
-  try {
-    await promise;
-  } finally {
-    c.executionCtx.waitUntil(cleanup());
-  }
 });
 
 app.get('/api/health', (c) =>
