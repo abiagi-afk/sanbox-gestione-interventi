@@ -1,0 +1,819 @@
+{
+  "entities": {
+    "AdminGrant": {
+      "title": "AdminGrant",
+      "description": "Explicit administrator privilege grant document keyed by Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "grantedByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "grantedByUid", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile isolated to owner and administrators.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "nome": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "cognome": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "technician"],
+          "maxLength": 20
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "directoryMemberId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Optional verified link to /directory/{memberId} for multi-alias corporate identity resolution."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "nome", "cognome", "role", "active", "createdAt", "updatedAt"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Admin-managed technician and administrator roster entry.",
+      "type": "object",
+      "properties": {
+        "memberId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "secondaryEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254,
+          "description": "Optional secondary Google email (@tecnicositepa.it) used for email delivery and Reply-To."
+        },
+        "nome": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "cognome": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "technician"],
+          "maxLength": 20
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "linkedUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Bounded list of up to 10 admin UIDs for secure list query enforcement."
+        },
+        "createdByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["memberId", "email", "nome", "cognome", "role", "active", "linkedUid", "adminUids", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global non-PII configuration including exempt commesse, Drive folder, and Google Calendar operator color labels.",
+      "type": "object",
+      "properties": {
+        "exemptCommesse": {
+          "type": "array",
+          "description": "Bounded list (max 50) of commessa codes exempt from mandatory technician notes."
+        },
+        "driveRootFolderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "driveSharedFolderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "operatorColorLabels": {
+          "type": "object",
+          "description": "Bounded map (max 11 keys) mapping Google Calendar TaskColorId keys to custom operator display names (max 40 chars each)."
+        },
+        "updatedByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["exemptCommesse", "driveRootFolderName", "updatedByUid", "updatedAt"]
+    },
+    "Article": {
+      "title": "Article",
+      "description": "Material catalog item selectable by technicians when recording used materials on a task.",
+      "type": "object",
+      "properties": {
+        "articleId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "codiceArticolo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "descrizione": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "categoria": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "unitaMisura": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of admin UIDs."
+        },
+        "createdByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["articleId", "codiceArticolo", "descrizione", "categoria", "unitaMisura", "active", "adminUids", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "Scheduled field intervention linked to a commessa, operator color, and assigned technicians.",
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "taskCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "commessa": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "descrizione": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "inizio": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "inizioMs": {
+          "type": "number"
+        },
+        "fine": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "fineMs": {
+          "type": "number"
+        },
+        "statoPrevalente": {
+          "type": "string",
+          "enum": ["Non Assegnato", "Assegnato", "Preso in Carico", "Completato"],
+          "maxLength": 30
+        },
+        "assignedEmails": {
+          "type": "array",
+          "description": "Bounded list (max 10) of assigned technician primary emails in lowercase."
+        },
+        "assignedAclEmails": {
+          "type": "array",
+          "description": "Bounded list (max 60) of expanded multi-alias technician emails (.id@sitespa.it, @sitespa.it, @tecnicositepa.it, and secondaryEmail) for squad visibility."
+        },
+        "assignedNames": {
+          "type": "array",
+          "description": "Bounded list (max 10) of assigned technician display names."
+        },
+        "assignedDeliverableEmails": {
+          "type": "array",
+          "description": "Bounded list (max 10) of assigned technician deliverable emails resolved from Organico secondaryEmail."
+        },
+        "assignedStatuses": {
+          "type": "array",
+          "description": "Bounded list (max 10) of individual technician assignment statuses aligned with assignedEmails."
+        },
+        "assignedNotes": {
+          "type": "array",
+          "description": "Bounded list (max 10) of individual technician activity notes (max 4000 chars each) aligned with assignedEmails."
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of admin UIDs."
+        },
+        "adminEmails": {
+          "type": "array",
+          "description": "Bounded list (max 10) of active admin emails for automatic task completion summary notifications."
+        },
+        "altroReparto": {
+          "type": "boolean",
+          "description": "Flag indicating work for another department without commessa or operational obligations."
+        },
+        "pendingAdminReview": {
+          "type": "boolean",
+          "description": "Flag indicating an autonomous technician-created task awaiting admin commessa and squad review."
+        },
+        "colorId": {
+          "type": "string",
+          "enum": ["peacock", "cobalt", "banana", "tomato", "basil", "grape", "flamingo", "tangerine", "sage", "lavender", "graphite"],
+          "maxLength": 20,
+          "description": "Google Calendar operator color identifier."
+        },
+        "createdByRole": {
+          "type": "string",
+          "enum": ["admin", "technician"],
+          "maxLength": 20
+        },
+        "createdByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["taskId", "taskCode", "commessa", "descrizione", "inizio", "inizioMs", "fine", "fineMs", "statoPrevalente", "assignedEmails", "assignedNames", "adminUids", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "Assignment": {
+      "title": "Assignment",
+      "description": "Individual technician assignment on a scheduled Task.",
+      "type": "object",
+      "properties": {
+        "assignmentId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "assignmentCode": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "taskId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "commessa": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "descrizioneTask": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "inizio": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "inizioMs": {
+          "type": "number"
+        },
+        "fine": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "fineMs": {
+          "type": "number"
+        },
+        "technicianEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "technicianName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "technicianUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "technicianAliasEmails": {
+          "type": "array",
+          "description": "Bounded list (max 10) of email aliases (.id@sitespa.it, @sitespa.it, @tecnicositepa.it, secondaryEmail) belonging to this assigned technician."
+        },
+        "stato": {
+          "type": "string",
+          "enum": ["Assegnato", "Preso in Carico", "Completato", "Annullato"],
+          "maxLength": 30
+        },
+        "noteTecnico": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of admin UIDs."
+        },
+        "squadEmails": {
+          "type": "array",
+          "description": "Bounded list (max 60) of multi-alias squad technician emails assigned to the parent task."
+        },
+        "squadNames": {
+          "type": "array",
+          "description": "Bounded list (max 10) of squad technician display names assigned to the parent task."
+        },
+        "squadDeliverableEmails": {
+          "type": "array",
+          "description": "Bounded list (max 10) of squad technician deliverable emails resolved from Organico secondaryEmail."
+        },
+        "colorId": {
+          "type": "string",
+          "enum": ["peacock", "cobalt", "banana", "tomato", "basil", "grape", "flamingo", "tangerine", "sage", "lavender", "graphite"],
+          "maxLength": 20,
+          "description": "Google Calendar operator color identifier replicated from parent Task."
+        },
+        "createdByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["assignmentId", "assignmentCode", "taskId", "commessa", "descrizioneTask", "inizio", "inizioMs", "fine", "fineMs", "technicianEmail", "technicianName", "technicianUid", "stato", "noteTecnico", "adminUids", "createdByUid", "createdAt", "updatedAt"]
+    },
+    "UsedMaterial": {
+      "title": "UsedMaterial",
+      "description": "Material item and positive quantity recorded by a technician on an assignment.",
+      "type": "object",
+      "properties": {
+        "usedId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "assignmentId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "taskId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "commessa": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "technicianEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "technicianName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "technicianUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "articleId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "codiceArticolo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "descrizioneArticolo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "categoria": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "unitaMisura": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20
+        },
+        "quantita": {
+          "type": "number"
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of admin UIDs."
+        },
+        "squadEmails": {
+          "type": "array",
+          "description": "Bounded list (max 60) of multi-alias squad technician emails assigned to the parent task."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["usedId", "assignmentId", "taskId", "commessa", "technicianEmail", "technicianName", "technicianUid", "articleId", "codiceArticolo", "descrizioneArticolo", "categoria", "unitaMisura", "quantita", "adminUids", "createdAt", "updatedAt"]
+    },
+    "InterventionPhoto": {
+      "title": "InterventionPhoto",
+      "description": "Photo metadata for a field intervention stored on Google Drive.",
+      "type": "object",
+      "properties": {
+        "photoId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "assignmentId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "taskId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "commessa": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "technicianEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "technicianName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "technicianUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "fileName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "driveFileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "driveWebViewLink": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "driveThumbnailLink": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "folderPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "caption": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of admin UIDs."
+        },
+        "squadEmails": {
+          "type": "array",
+          "description": "Bounded list (max 60) of multi-alias squad technician emails assigned to the parent task."
+        },
+        "driveSubfolderId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "ownerConsolidated": {
+          "type": "boolean"
+        },
+        "pendingCleanupFileId": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["photoId", "assignmentId", "taskId", "commessa", "technicianEmail", "technicianName", "technicianUid", "fileName", "driveFileId", "driveWebViewLink", "driveThumbnailLink", "folderPath", "caption", "adminUids", "createdAt"]
+    },
+    "Absence": {
+      "title": "Absence",
+      "description": "Technician absence window (Ferie, Permesso, Malattia, Altro) for scheduling availability.",
+      "type": "object",
+      "properties": {
+        "absenceId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "technicianEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254
+        },
+        "technicianName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "technicianUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tipo": {
+          "type": "string",
+          "enum": ["Ferie", "Permesso", "Malattia", "Altro"],
+          "maxLength": 20
+        },
+        "allDay": {
+          "type": "boolean"
+        },
+        "inizio": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "inizioMs": {
+          "type": "number"
+        },
+        "fine": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "fineMs": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of admin UIDs."
+        },
+        "createdByUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdByRole": {
+          "type": "string",
+          "enum": ["admin", "technician"],
+          "maxLength": 20
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["absenceId", "technicianEmail", "technicianName", "technicianUid", "tipo", "allDay", "inizio", "inizioMs", "fine", "fineMs", "note", "adminUids", "createdByUid", "createdByRole", "createdAt", "updatedAt"]
+    },
+    "PushSubscription": {
+      "title": "PushSubscription",
+      "description": "Zero-PII Web Push endpoint subscription registered by an administrator device (desktop or smartphone).",
+      "type": "object",
+      "properties": {
+        "subId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 1500,
+          "pattern": "^https://.*"
+        },
+        "p256dh": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 256
+        },
+        "auth": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 128
+        },
+        "deviceLabel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "adminUids": {
+          "type": "array",
+          "description": "Bounded list (max 10) of admin UIDs."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["subId", "ownerUid", "endpoint", "p256dh", "auth", "deviceLabel", "active", "adminUids", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{userId}": {
+      "schema": "AdminGrant",
+      "description": "Explicit administrator privilege grants."
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Private authenticated user profiles."
+    },
+    "/directory/{memberId}": {
+      "schema": "StaffMember",
+      "description": "Admin-managed roster of technicians and administrators."
+    },
+    "/settings/{configId}": {
+      "schema": "AppSettings",
+      "description": "Application-wide configuration documents."
+    },
+    "/articles/{articleId}": {
+      "schema": "Article",
+      "description": "Master catalog of articles and materials."
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Scheduled tasks and interventions."
+    },
+    "/assignments/{assignmentId}": {
+      "schema": "Assignment",
+      "description": "Technician assignments linked to tasks."
+    },
+    "/usedMaterials/{usedId}": {
+      "schema": "UsedMaterial",
+      "description": "Materials declared as used on assignments."
+    },
+    "/interventionPhotos/{photoId}": {
+      "schema": "InterventionPhoto",
+      "description": "Intervention photo metadata referencing Google Drive files."
+    },
+    "/absences/{absenceId}": {
+      "schema": "Absence",
+      "description": "Technician absences (Ferie, Permesso, Malattia, Altro) managed by admins and self-service technicians."
+    },
+    "/pushSubscriptions/{subId}": {
+      "schema": "PushSubscription",
+      "description": "Zero-PII Web Push subscriptions for administrator PC and mobile devices."
+    }
+  }
+}

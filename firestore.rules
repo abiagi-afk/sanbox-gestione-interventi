@@ -1,0 +1,929 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ------------------------------------------------------------------------
+    // Reusable Hardened Global Primitives
+    // ------------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email is string &&
+        request.auth.token.email.size() <= 254;
+    }
+
+    function authEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    // Extracts local-part across corporate SITE domains (.id@sitespa.it, @sitespa.it, @tecnicositepa.it, @tecnicositespa.it)
+    function authSiteBaseLocal() {
+      let em = authEmail();
+      return em.matches('^[^@\\s]+\\.id@sitespa\\.it$')
+        ? em.replace('\\.id@sitespa\\.it$', '')
+        : (em.matches('^[^@\\s]+@sitespa\\.it$')
+            ? em.replace('@sitespa\\.it$', '')
+            : (em.matches('^[^@\\s]+@tecnicositepa\\.it$')
+                ? em.replace('@tecnicositepa\\.it$', '')
+                : (em.matches('^[^@\\s]+@tecnicositespa\\.it$')
+                    ? em.replace('@tecnicositespa\\.it$', '')
+                    : '')));
+    }
+
+    function isOwnEmailOrAlt(targetEmail) {
+      let em = authEmail();
+      let base = authSiteBaseLocal();
+      return targetEmail == em || (
+        base != '' && (
+          targetEmail == (base + '@sitespa.it') ||
+          targetEmail == (base + '.id@sitespa.it') ||
+          targetEmail == (base + '@tecnicositepa.it') ||
+          targetEmail == (base + '@tecnicositespa.it')
+        )
+      );
+    }
+
+    function isInEmailList(arr) {
+      let em = authEmail();
+      let base = authSiteBaseLocal();
+      return arr is list && (
+        em in arr || (
+          base != '' && (
+            (base + '@sitespa.it') in arr ||
+            (base + '.id@sitespa.it') in arr ||
+            (base + '@tecnicositepa.it') in arr ||
+            (base + '@tecnicositespa.it') in arr
+          )
+        )
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.size() >= 3 &&
+        email.size() <= 254 &&
+        email == email.lower() &&
+        email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    function isValidLooseEmail(email) {
+      return email is string &&
+        email.size() >= 3 &&
+        email.size() <= 254 &&
+        email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && authEmail() in [
+        'a.biagi@sitespa.it',
+        'a.biagi.id@sitespa.it',
+        'a.biagi@tecnicositepa.it',
+        's.pistacchio@sitespa.it',
+        's.pistacchio.id@sitespa.it',
+        's.pistacchio@tecnicositepa.it'
+      ];
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Verifies that optional directoryMemberId on /users/{uid} belongs to caller (or is set by Admin)
+    function isValidDirectoryLinkForUser(userData, targetUid) {
+      return !('directoryMemberId' in userData) || (
+        isValidId(userData.directoryMemberId) &&
+        exists(/databases/$(database)/documents/directory/$(userData.directoryMemberId)) && (
+          isAdmin() || (
+            get(/databases/$(database)/documents/directory/$(userData.directoryMemberId)).data.linkedUid == targetUid ||
+            isOwnEmailOrAlt(get(/databases/$(database)/documents/directory/$(userData.directoryMemberId)).data.email) ||
+            ('secondaryEmail' in get(/databases/$(database)/documents/directory/$(userData.directoryMemberId)).data &&
+              isOwnEmailOrAlt(get(/databases/$(database)/documents/directory/$(userData.directoryMemberId)).data.secondaryEmail))
+          )
+        )
+      );
+    }
+
+    // Single-document Organico ownership fallback (NEVER invoked inside allow list!)
+    function isDirectoryVerifiedEmailForCaller(targetEmail) {
+      let normTarget = (targetEmail is string && targetEmail.size() <= 254) ? targetEmail.lower() : '';
+      return normTarget.size() >= 3 &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        'directoryMemberId' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data &&
+        isValidId(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId) &&
+        exists(/databases/$(database)/documents/directory/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId)) && (
+          (
+            get(/databases/$(database)/documents/directory/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId)).data.linkedUid == request.auth.uid ||
+            isOwnEmailOrAlt(get(/databases/$(database)/documents/directory/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId)).data.email) ||
+            ('secondaryEmail' in get(/databases/$(database)/documents/directory/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId)).data &&
+              isOwnEmailOrAlt(get(/databases/$(database)/documents/directory/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId)).data.secondaryEmail))
+          ) && (
+            get(/databases/$(database)/documents/directory/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId)).data.email.lower() == normTarget ||
+            ('secondaryEmail' in get(/databases/$(database)/documents/directory/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId)).data &&
+              get(/databases/$(database)/documents/directory/$(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.directoryMemberId)).data.secondaryEmail.lower() == normTarget)
+          )
+        );
+    }
+
+    function isTechnicianOwnerEmailOrUid(techEmail, techUid) {
+      return isOwnEmailOrAlt(techEmail) ||
+        (techEmail is string && techEmail.size() <= 254 && isOwnEmailOrAlt(techEmail.lower())) ||
+        (techUid is string && techUid.size() >= 1 && techUid.size() <= 128 && techUid == request.auth.uid) ||
+        isDirectoryVerifiedEmailForCaller(techEmail);
+    }
+
+    function isAssignmentOwnerDoc(data) {
+      return isOwnEmailOrAlt(data.technicianEmail) ||
+        (data.technicianEmail is string && data.technicianEmail.size() <= 254 && isOwnEmailOrAlt(data.technicianEmail.lower())) ||
+        (data.technicianUid is string && data.technicianUid.size() >= 1 && data.technicianUid.size() <= 128 && data.technicianUid == request.auth.uid) ||
+        ('technicianAliasEmails' in data && isInEmailList(data.technicianAliasEmails)) ||
+        isDirectoryVerifiedEmailForCaller(data.technicianEmail);
+    }
+
+    function isBoundedStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= 254));
+    }
+
+    function isBoundedNoteList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= 4000));
+    }
+
+    function isValidTaskColor(colorId) {
+      return colorId is string &&
+        colorId.size() >= 3 &&
+        colorId.size() <= 20 &&
+        colorId in [
+          'peacock', 'cobalt', 'banana', 'tomato', 'basil',
+          'grape', 'flamingo', 'tangerine', 'sage', 'lavender', 'graphite'
+        ];
+    }
+
+    function isValidColorLabelValue(m, k) {
+      return !(k in m) || (m[k] is string && m[k].size() <= 40);
+    }
+
+    function isValidOperatorColorLabels(m) {
+      return m is map &&
+        m.size() <= 11 &&
+        m.keys().hasOnly([
+          'peacock', 'cobalt', 'banana', 'tomato', 'basil',
+          'grape', 'flamingo', 'tangerine', 'sage', 'lavender', 'graphite'
+        ]) &&
+        isValidColorLabelValue(m, 'peacock') &&
+        isValidColorLabelValue(m, 'cobalt') &&
+        isValidColorLabelValue(m, 'banana') &&
+        isValidColorLabelValue(m, 'tomato') &&
+        isValidColorLabelValue(m, 'basil') &&
+        isValidColorLabelValue(m, 'grape') &&
+        isValidColorLabelValue(m, 'flamingo') &&
+        isValidColorLabelValue(m, 'tangerine') &&
+        isValidColorLabelValue(m, 'sage') &&
+        isValidColorLabelValue(m, 'lavender') &&
+        isValidColorLabelValue(m, 'graphite');
+    }
+
+    // ------------------------------------------------------------------------
+    // Validation Blueprints (Anti-Update-Gap — No existing()/diff() inside)
+    // ------------------------------------------------------------------------
+    function isValidAdminGrant(data) {
+      return data.keys().hasAll(['uid', 'email', 'grantedByUid', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'grantedByUid', 'createdAt']) &&
+        isValidId(data.uid) &&
+        isValidEmail(data.email) &&
+        isValidId(data.grantedByUid) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'nome', 'cognome', 'role', 'active', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'nome', 'cognome', 'role', 'active', 'directoryMemberId', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        isValidEmail(data.email) &&
+        data.nome is string && data.nome.size() >= 1 && data.nome.size() <= 80 &&
+        data.cognome is string && data.cognome.size() >= 1 && data.cognome.size() <= 80 &&
+        data.role is string && data.role.size() <= 20 && data.role in ['admin', 'technician'] &&
+        data.active is bool &&
+        (!('directoryMemberId' in data) || isValidId(data.directoryMemberId)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidStaffMember(data) {
+      return data.keys().hasAll(['memberId', 'email', 'nome', 'cognome', 'role', 'active', 'linkedUid', 'adminUids', 'createdByUid', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['memberId', 'email', 'secondaryEmail', 'nome', 'cognome', 'role', 'active', 'linkedUid', 'adminUids', 'createdByUid', 'createdAt', 'updatedAt']) &&
+        isValidId(data.memberId) &&
+        isValidEmail(data.email) &&
+        (!('secondaryEmail' in data) || (
+          data.secondaryEmail is string &&
+          data.secondaryEmail.size() <= 254 &&
+          (data.secondaryEmail.size() == 0 || isValidEmail(data.secondaryEmail))
+        )) &&
+        data.nome is string && data.nome.size() >= 1 && data.nome.size() <= 80 &&
+        data.cognome is string && data.cognome.size() >= 1 && data.cognome.size() <= 80 &&
+        data.role is string && data.role.size() <= 20 && data.role in ['admin', 'technician'] &&
+        data.active is bool &&
+        data.linkedUid is string && data.linkedUid.size() <= 128 &&
+        isBoundedStringList(data.adminUids, 10) &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAppSettings(data) {
+      return data.keys().hasAll(['exemptCommesse', 'driveRootFolderName', 'updatedByUid', 'updatedAt']) &&
+        data.keys().hasOnly(['exemptCommesse', 'driveRootFolderName', 'driveSharedFolderId', 'operatorColorLabels', 'updatedByUid', 'updatedAt']) &&
+        isBoundedStringList(data.exemptCommesse, 50) &&
+        data.driveRootFolderName is string && data.driveRootFolderName.size() >= 1 && data.driveRootFolderName.size() <= 120 &&
+        (!('driveSharedFolderId' in data) || (
+          data.driveSharedFolderId is string &&
+          data.driveSharedFolderId.size() >= 1 &&
+          data.driveSharedFolderId.size() <= 200 &&
+          data.driveSharedFolderId.matches('^[a-zA-Z0-9_\\-]+$')
+        )) &&
+        (!('operatorColorLabels' in data) || isValidOperatorColorLabels(data.operatorColorLabels)) &&
+        isValidId(data.updatedByUid) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidArticle(data) {
+      return data.keys().hasAll(['articleId', 'codiceArticolo', 'descrizione', 'categoria', 'unitaMisura', 'active', 'adminUids', 'createdByUid', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['articleId', 'codiceArticolo', 'descrizione', 'categoria', 'unitaMisura', 'active', 'adminUids', 'createdByUid', 'createdAt', 'updatedAt']) &&
+        isValidId(data.articleId) &&
+        data.codiceArticolo is string && data.codiceArticolo.size() >= 1 && data.codiceArticolo.size() <= 80 &&
+        data.descrizione is string && data.descrizione.size() >= 1 && data.descrizione.size() <= 300 &&
+        data.categoria is string && data.categoria.size() >= 1 && data.categoria.size() <= 100 &&
+        data.unitaMisura is string && data.unitaMisura.size() >= 1 && data.unitaMisura.size() <= 20 &&
+        data.active is bool &&
+        isBoundedStringList(data.adminUids, 10) &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['taskId', 'taskCode', 'commessa', 'descrizione', 'inizio', 'inizioMs', 'fine', 'fineMs', 'statoPrevalente', 'assignedEmails', 'assignedNames', 'adminUids', 'createdByUid', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'taskId', 'taskCode', 'commessa', 'descrizione', 'inizio', 'inizioMs', 'fine', 'fineMs',
+          'statoPrevalente', 'assignedEmails', 'assignedAclEmails', 'assignedNames', 'assignedDeliverableEmails',
+          'assignedStatuses', 'assignedNotes', 'adminUids', 'adminEmails',
+          'altroReparto', 'pendingAdminReview', 'colorId', 'createdByRole', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.taskId) &&
+        data.taskCode is string && data.taskCode.size() >= 1 && data.taskCode.size() <= 80 &&
+        data.commessa is string && data.commessa.size() <= 80 && (
+          data.commessa.size() >= 1 ||
+          ('altroReparto' in data && data.altroReparto == true) ||
+          ('pendingAdminReview' in data && data.pendingAdminReview == true)
+        ) &&
+        data.descrizione is string && data.descrizione.size() >= 1 && data.descrizione.size() <= 1000 &&
+        data.inizio is string && data.inizio.size() >= 10 && data.inizio.size() <= 40 &&
+        data.inizioMs is number &&
+        data.fine is string && data.fine.size() >= 10 && data.fine.size() <= 40 &&
+        data.fineMs is number &&
+        data.fineMs >= data.inizioMs &&
+        data.statoPrevalente is string && data.statoPrevalente.size() <= 30 &&
+        data.statoPrevalente in ['Non Assegnato', 'Assegnato', 'Preso in Carico', 'Completato'] &&
+        isBoundedStringList(data.assignedEmails, 10) &&
+        (!('assignedAclEmails' in data) || isBoundedStringList(data.assignedAclEmails, 60)) &&
+        isBoundedStringList(data.assignedNames, 10) &&
+        (!('assignedDeliverableEmails' in data) || isBoundedStringList(data.assignedDeliverableEmails, 10)) &&
+        (!('assignedStatuses' in data) || isBoundedStringList(data.assignedStatuses, 10)) &&
+        (!('assignedNotes' in data) || isBoundedNoteList(data.assignedNotes, 10)) &&
+        isBoundedStringList(data.adminUids, 10) &&
+        (!('adminEmails' in data) || isBoundedStringList(data.adminEmails, 10)) &&
+        (!('altroReparto' in data) || data.altroReparto is bool) &&
+        (!('pendingAdminReview' in data) || data.pendingAdminReview is bool) &&
+        (!('colorId' in data) || isValidTaskColor(data.colorId)) &&
+        (!('createdByRole' in data) || (data.createdByRole is string && data.createdByRole.size() <= 20 && data.createdByRole in ['admin', 'technician'])) &&
+        isValidId(data.createdByUid) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAssignment(data) {
+      return data.keys().hasAll([
+          'assignmentId', 'taskId', 'commessa', 'descrizioneTask',
+          'inizio', 'inizioMs', 'fine', 'fineMs',
+          'technicianEmail', 'technicianName', 'technicianUid',
+          'stato', 'noteTecnico', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'assignmentId', 'assignmentCode', 'taskId', 'commessa', 'descrizioneTask', 'inizio', 'inizioMs', 'fine', 'fineMs',
+          'technicianEmail', 'technicianName', 'technicianUid', 'technicianAliasEmails', 'stato', 'noteTecnico', 'adminUids',
+          'squadEmails', 'squadNames', 'squadDeliverableEmails', 'colorId', 'altroReparto', 'pendingAdminReview',
+          'createdByRole', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.assignmentId) &&
+        (!('assignmentCode' in data) || (data.assignmentCode is string && data.assignmentCode.size() <= 80)) &&
+        isValidId(data.taskId) &&
+        data.commessa is string && data.commessa.size() >= 0 && data.commessa.size() <= 80 &&
+        data.descrizioneTask is string && data.descrizioneTask.size() >= 1 && data.descrizioneTask.size() <= 1000 &&
+        data.inizio is string && data.inizio.size() >= 10 && data.inizio.size() <= 40 &&
+        data.inizioMs is number &&
+        data.fine is string && data.fine.size() >= 10 && data.fine.size() <= 40 &&
+        data.fineMs is number &&
+        isValidLooseEmail(data.technicianEmail) &&
+        data.technicianName is string && data.technicianName.size() >= 1 && data.technicianName.size() <= 160 &&
+        data.technicianUid is string && data.technicianUid.size() <= 128 &&
+        (!('technicianAliasEmails' in data) || isBoundedStringList(data.technicianAliasEmails, 10)) &&
+        data.stato is string && data.stato.size() <= 30 &&
+        data.stato in ['Assegnato', 'Preso in Carico', 'Completato', 'Annullato'] &&
+        data.noteTecnico is string && data.noteTecnico.size() <= 4000 &&
+        (!('adminUids' in data) || isBoundedStringList(data.adminUids, 10)) &&
+        (!('squadEmails' in data) || isBoundedStringList(data.squadEmails, 60)) &&
+        (!('squadNames' in data) || isBoundedStringList(data.squadNames, 10)) &&
+        (!('squadDeliverableEmails' in data) || isBoundedStringList(data.squadDeliverableEmails, 10)) &&
+        (!('colorId' in data) || (data.colorId is string && data.colorId.size() <= 20 && (data.colorId == '' || isValidTaskColor(data.colorId)))) &&
+        (!('altroReparto' in data) || data.altroReparto is bool) &&
+        (!('pendingAdminReview' in data) || data.pendingAdminReview is bool) &&
+        (!('createdByRole' in data) || (data.createdByRole is string && data.createdByRole.size() <= 20 && data.createdByRole in ['admin', 'technician'])) &&
+        (!('createdByUid' in data) || (data.createdByUid is string && data.createdByUid.size() <= 128)) &&
+        (!('createdAt' in data) || data.createdAt is timestamp) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUsedMaterial(data) {
+      return data.keys().hasAll(['usedId', 'assignmentId', 'taskId', 'commessa', 'technicianEmail', 'technicianName', 'technicianUid', 'articleId', 'codiceArticolo', 'descrizioneArticolo', 'categoria', 'unitaMisura', 'quantita', 'adminUids', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['usedId', 'assignmentId', 'taskId', 'commessa', 'technicianEmail', 'technicianName', 'technicianUid', 'articleId', 'codiceArticolo', 'descrizioneArticolo', 'categoria', 'unitaMisura', 'quantita', 'adminUids', 'squadEmails', 'createdAt', 'updatedAt']) &&
+        isValidId(data.usedId) &&
+        isValidId(data.assignmentId) &&
+        isValidId(data.taskId) &&
+        data.commessa is string && data.commessa.size() >= 0 && data.commessa.size() <= 80 &&
+        isValidLooseEmail(data.technicianEmail) &&
+        data.technicianName is string && data.technicianName.size() >= 1 && data.technicianName.size() <= 160 &&
+        isValidId(data.technicianUid) &&
+        isValidId(data.articleId) &&
+        data.codiceArticolo is string && data.codiceArticolo.size() >= 1 && data.codiceArticolo.size() <= 80 &&
+        data.descrizioneArticolo is string && data.descrizioneArticolo.size() >= 1 && data.descrizioneArticolo.size() <= 300 &&
+        data.categoria is string && data.categoria.size() >= 1 && data.categoria.size() <= 100 &&
+        data.unitaMisura is string && data.unitaMisura.size() >= 1 && data.unitaMisura.size() <= 20 &&
+        data.quantita is number && data.quantita > 0 && data.quantita <= 100000 &&
+        isBoundedStringList(data.adminUids, 10) &&
+        (!('squadEmails' in data) || isBoundedStringList(data.squadEmails, 60)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidInterventionPhoto(data) {
+      return data.keys().hasAll(['photoId', 'assignmentId', 'taskId', 'commessa', 'technicianEmail', 'technicianName', 'technicianUid', 'fileName', 'driveFileId', 'driveWebViewLink', 'driveThumbnailLink', 'folderPath', 'caption', 'adminUids', 'createdAt']) &&
+        data.keys().hasOnly(['photoId', 'assignmentId', 'taskId', 'commessa', 'technicianEmail', 'technicianName', 'technicianUid', 'fileName', 'driveFileId', 'driveWebViewLink', 'driveThumbnailLink', 'folderPath', 'caption', 'adminUids', 'squadEmails', 'driveSubfolderId', 'ownerConsolidated', 'pendingCleanupFileId', 'createdAt', 'updatedAt']) &&
+        isValidId(data.photoId) &&
+        isValidId(data.assignmentId) &&
+        isValidId(data.taskId) &&
+        data.commessa is string && data.commessa.size() >= 0 && data.commessa.size() <= 80 &&
+        isValidLooseEmail(data.technicianEmail) &&
+        data.technicianName is string && data.technicianName.size() >= 1 && data.technicianName.size() <= 160 &&
+        isValidId(data.technicianUid) &&
+        data.fileName is string && data.fileName.size() >= 1 && data.fileName.size() <= 200 &&
+        data.driveFileId is string && data.driveFileId.size() >= 1 && data.driveFileId.size() <= 200 &&
+        data.driveWebViewLink is string && data.driveWebViewLink.size() >= 1 && data.driveWebViewLink.size() <= 1000 &&
+        data.driveThumbnailLink is string && data.driveThumbnailLink.size() <= 1000 &&
+        data.folderPath is string && data.folderPath.size() >= 1 && data.folderPath.size() <= 300 &&
+        data.caption is string && data.caption.size() <= 500 &&
+        isBoundedStringList(data.adminUids, 10) &&
+        (!('squadEmails' in data) || isBoundedStringList(data.squadEmails, 60)) &&
+        (!('driveSubfolderId' in data) || (data.driveSubfolderId is string && data.driveSubfolderId.size() <= 200)) &&
+        (!('ownerConsolidated' in data) || data.ownerConsolidated is bool) &&
+        (!('pendingCleanupFileId' in data) || (data.pendingCleanupFileId is string && data.pendingCleanupFileId.size() <= 200)) &&
+        data.createdAt is timestamp &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidAbsence(data) {
+      return data.keys().hasAll([
+          'absenceId', 'technicianEmail', 'technicianName', 'technicianUid',
+          'tipo', 'allDay', 'inizio', 'inizioMs', 'fine', 'fineMs',
+          'note', 'adminUids', 'createdByUid', 'createdByRole', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'absenceId', 'technicianEmail', 'technicianName', 'technicianUid',
+          'tipo', 'allDay', 'inizio', 'inizioMs', 'fine', 'fineMs',
+          'note', 'adminUids', 'createdByUid', 'createdByRole', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.absenceId) &&
+        isValidLooseEmail(data.technicianEmail) &&
+        data.technicianName is string && data.technicianName.size() >= 1 && data.technicianName.size() <= 160 &&
+        data.technicianUid is string && data.technicianUid.size() <= 128 &&
+        data.tipo is string && data.tipo.size() <= 20 && data.tipo in ['Ferie', 'Permesso', 'Malattia', 'Altro'] &&
+        data.allDay is bool &&
+        data.inizio is string && data.inizio.size() >= 10 && data.inizio.size() <= 40 &&
+        data.inizioMs is number &&
+        data.fine is string && data.fine.size() >= 10 && data.fine.size() <= 40 &&
+        data.fineMs is number &&
+        data.fineMs >= data.inizioMs + 1800000 &&
+        data.note is string && data.note.size() <= 1000 &&
+        isBoundedStringList(data.adminUids, 10) &&
+        isValidId(data.createdByUid) &&
+        data.createdByRole is string && data.createdByRole.size() <= 20 && data.createdByRole in ['admin', 'technician'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPushSubscription(data) {
+      return data.keys().hasAll([
+          'subId', 'ownerUid', 'endpoint', 'p256dh', 'auth',
+          'deviceLabel', 'active', 'adminUids', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'subId', 'ownerUid', 'endpoint', 'p256dh', 'auth',
+          'deviceLabel', 'active', 'adminUids', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.subId) &&
+        isValidId(data.ownerUid) &&
+        data.endpoint is string && data.endpoint.size() >= 10 && data.endpoint.size() <= 1500 &&
+        data.endpoint.matches('^https://.*') &&
+        data.p256dh is string && data.p256dh.size() >= 10 && data.p256dh.size() <= 256 &&
+        data.auth is string && data.auth.size() >= 6 && data.auth.size() <= 128 &&
+        data.deviceLabel is string && data.deviceLabel.size() >= 1 && data.deviceLabel.size() <= 120 &&
+        data.active is bool &&
+        isBoundedStringList(data.adminUids, 10) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // ------------------------------------------------------------------------
+    // Collection Match Rules (All 11 Collections Exhaustively Secured)
+    // ------------------------------------------------------------------------
+
+    // 1. /admins/{userId}
+    match /admins/{userId} {
+      allow get: if isVerified() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if false;
+      allow create: if isVerified() && isValidId(userId) && isValidAdminGrant(incoming()) &&
+        incoming().uid == userId &&
+        incoming().grantedByUid == request.auth.uid &&
+        incoming().createdAt == request.time && (
+          isAdmin() || (
+            request.auth.uid == userId &&
+            incoming().email == authEmail() &&
+            !exists(/databases/$(database)/documents/settings/general) &&
+            existsAfter(/databases/$(database)/documents/settings/general)
+          )
+        );
+      allow update: if false;
+      allow delete: if isVerified() && isValidId(userId) && isAdmin();
+    }
+
+    // 2. /users/{userId} (PII Isolated — Owner & Admin Only, No List)
+    match /users/{userId} {
+      allow get: if isVerified() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+      allow list: if false;
+      allow create: if isVerified() && isValidId(userId) && isValidUserProfile(incoming()) &&
+        request.auth.uid == userId &&
+        incoming().uid == request.auth.uid &&
+        incoming().email == authEmail() &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (incoming().role == 'technician' || isAdmin()) &&
+        isValidDirectoryLinkForUser(incoming(), userId);
+      allow update: if isVerified() && isValidUserProfile(incoming()) && isValidId(userId) &&
+        incoming().uid == existing().uid &&
+        incoming().email == existing().email &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        isValidDirectoryLinkForUser(incoming(), userId) && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'cognome', 'role', 'active', 'directoryMemberId', 'updatedAt'])) ||
+          (request.auth.uid == userId && incoming().role == existing().role && incoming().active == existing().active &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['nome', 'cognome', 'directoryMemberId', 'updatedAt']))
+        );
+      allow delete: if isVerified() && isValidId(userId) && isAdmin();
+    }
+
+    // 3. /directory/{memberId} (Admin Roster + Multi-Alias Self Lookup & UID Link)
+    match /directory/{memberId} {
+      allow get: if isVerified() && isValidId(memberId) && (
+        isAdmin() || (resource != null && (
+          existing().linkedUid == request.auth.uid ||
+          isOwnEmailOrAlt(existing().email) ||
+          ('secondaryEmail' in existing() && isOwnEmailOrAlt(existing().secondaryEmail))
+        ))
+      );
+      allow list: if isVerified() && (
+        isBootstrappedAdmin() ||
+        existing().linkedUid == request.auth.uid ||
+        isOwnEmailOrAlt(existing().email) ||
+        ('secondaryEmail' in existing() && isOwnEmailOrAlt(existing().secondaryEmail)) ||
+        ('adminUids' in existing() && existing().adminUids is list && request.auth.uid in existing().adminUids)
+      );
+      allow create: if isVerified() && isValidId(memberId) && isValidStaffMember(incoming()) &&
+        incoming().memberId == memberId &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+      allow update: if isVerified() && isValidStaffMember(incoming()) && isValidId(memberId) &&
+        incoming().memberId == existing().memberId &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'secondaryEmail', 'nome', 'cognome', 'role', 'active', 'linkedUid', 'adminUids', 'updatedAt'])) ||
+          ((existing().linkedUid == request.auth.uid || isOwnEmailOrAlt(existing().email) || ('secondaryEmail' in existing() && isOwnEmailOrAlt(existing().secondaryEmail))) &&
+            incoming().linkedUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['linkedUid', 'updatedAt']))
+        );
+      allow delete: if isVerified() && isValidId(memberId) && isAdmin();
+    }
+
+    // 4. /settings/{configId} (Non-PII Global App Settings)
+    match /settings/{configId} {
+      allow get: if isVerified() && isValidId(configId);
+      allow list: if false;
+      allow create: if isVerified() && isValidId(configId) && isValidAppSettings(incoming()) &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            configId == 'general' &&
+            !exists(/databases/$(database)/documents/settings/general) &&
+            existsAfter(/databases/$(database)/documents/admins/$(request.auth.uid))
+          )
+        );
+      allow update: if isVerified() && isValidAppSettings(incoming()) && isValidId(configId) &&
+        incoming().updatedByUid == request.auth.uid &&
+        incoming().updatedAt == request.time &&
+        isAdmin() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'exemptCommesse', 'driveRootFolderName', 'driveSharedFolderId',
+          'operatorColorLabels', 'updatedByUid', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    // 5. /articles/{articleId} (Catalogo Anagrafica Articoli)
+    match /articles/{articleId} {
+      allow get: if isVerified() && isValidId(articleId) && (
+        isAdmin() || (resource != null && existing().active == true)
+      );
+      allow list: if isVerified() && (
+        existing().active == true ||
+        isBootstrappedAdmin() ||
+        ('adminUids' in existing() && existing().adminUids is list && request.auth.uid in existing().adminUids)
+      );
+      allow create: if isVerified() && isValidId(articleId) && isValidArticle(incoming()) &&
+        incoming().articleId == articleId &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+      allow update: if isVerified() && isValidArticle(incoming()) && isValidId(articleId) &&
+        incoming().articleId == existing().articleId &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        isAdmin() &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['codiceArticolo', 'descrizione', 'categoria', 'unitaMisura', 'active', 'adminUids', 'updatedAt']);
+      allow delete: if isVerified() && isValidId(articleId) && isAdmin();
+    }
+
+    // 6. /tasks/{taskId} (Pianificazione Interventi & Task Autonomi — Update Strictly Admin-Only)
+    match /tasks/{taskId} {
+      allow get: if isVerified() && isValidId(taskId) && (
+        isAdmin() ||
+        (resource != null && (
+          isInEmailList(existing().assignedEmails) ||
+          ('assignedAclEmails' in existing() && isInEmailList(existing().assignedAclEmails))
+        ))
+      );
+      allow list: if isVerified() && (
+        isBootstrappedAdmin() ||
+        isInEmailList(existing().assignedEmails) ||
+        ('assignedAclEmails' in existing() && isInEmailList(existing().assignedAclEmails)) ||
+        ('adminUids' in existing() && existing().adminUids is list && request.auth.uid in existing().adminUids)
+      );
+      allow create: if isVerified() && isValidId(taskId) && isValidTask(incoming()) &&
+        incoming().fineMs >= incoming().inizioMs + 3600000 &&
+        incoming().taskId == taskId &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            'createdByRole' in incoming() && incoming().createdByRole == 'technician' &&
+            'pendingAdminReview' in incoming() && incoming().pendingAdminReview == true &&
+            (!('altroReparto' in incoming()) || incoming().altroReparto == false) &&
+            incoming().commessa == '' &&
+            incoming().assignedEmails.size() == 1 &&
+            isOwnEmailOrAlt(incoming().assignedEmails[0]) &&
+            (!('assignedAclEmails' in incoming()) || (
+              incoming().assignedAclEmails.size() >= 1 &&
+              incoming().assignedAclEmails.size() <= 10 &&
+              isInEmailList(incoming().assignedAclEmails)
+            )) &&
+            (!('assignedDeliverableEmails' in incoming()) || (
+              incoming().assignedDeliverableEmails.size() == 1 &&
+              isValidEmail(incoming().assignedDeliverableEmails[0])
+            )) &&
+            (!('assignedStatuses' in incoming()) || (
+              incoming().assignedStatuses.size() == 1 &&
+              incoming().assignedStatuses[0] == 'Preso in Carico'
+            )) &&
+            (!('assignedNotes' in incoming()) || incoming().assignedNotes.size() <= 1) &&
+            incoming().statoPrevalente == 'Preso in Carico'
+          )
+        );
+      allow update: if isVerified() && isValidTask(incoming()) && isValidId(taskId) &&
+        incoming().taskId == existing().taskId &&
+        (!('createdByUid' in existing()) || incoming().createdByUid == existing().createdByUid) &&
+        (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt) &&
+        incoming().updatedAt == request.time &&
+        isAdmin() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'taskCode', 'commessa', 'descrizione', 'inizio', 'inizioMs', 'fine', 'fineMs',
+          'statoPrevalente', 'assignedEmails', 'assignedAclEmails', 'assignedNames', 'assignedDeliverableEmails',
+          'assignedStatuses', 'assignedNotes', 'adminUids', 'adminEmails',
+          'altroReparto', 'pendingAdminReview', 'colorId', 'createdByRole', 'updatedAt'
+        ]);
+      allow delete: if isVerified() && isValidId(taskId) && isAdmin();
+    }
+
+    // 7. /assignments/{assignmentId} (Single-Rail Technician Execution + Terminal State Locking)
+    match /assignments/{assignmentId} {
+      allow get: if isVerified() && isValidId(assignmentId) && (
+        isAdmin() ||
+        (resource != null && (
+          isAssignmentOwnerDoc(existing()) ||
+          ('squadEmails' in existing() && isInEmailList(existing().squadEmails))
+        ))
+      );
+      allow list: if isVerified() && (
+        isBootstrappedAdmin() ||
+        existing().technicianUid == request.auth.uid ||
+        isOwnEmailOrAlt(existing().technicianEmail) ||
+        ('technicianAliasEmails' in existing() && isInEmailList(existing().technicianAliasEmails)) ||
+        ('squadEmails' in existing() && isInEmailList(existing().squadEmails)) ||
+        ('adminUids' in existing() && existing().adminUids is list && request.auth.uid in existing().adminUids)
+      );
+      allow create: if isVerified() && isValidId(assignmentId) && isValidAssignment(incoming()) &&
+        incoming().keys().hasAll([
+          'assignmentId', 'assignmentCode', 'taskId', 'commessa', 'descrizioneTask',
+          'inizio', 'inizioMs', 'fine', 'fineMs', 'technicianEmail', 'technicianName',
+          'technicianUid', 'stato', 'noteTecnico', 'adminUids', 'createdByUid', 'createdAt', 'updatedAt'
+        ]) &&
+        incoming().assignmentCode.size() >= 1 &&
+        isValidEmail(incoming().technicianEmail) &&
+        (!('colorId' in incoming()) || isValidTaskColor(incoming().colorId)) &&
+        incoming().assignmentId == assignmentId &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time && (
+          (isAdmin() && (
+            exists(/databases/$(database)/documents/tasks/$(incoming().taskId)) ||
+            existsAfter(/databases/$(database)/documents/tasks/$(incoming().taskId))
+          )) || (
+            isOwnEmailOrAlt(incoming().technicianEmail) &&
+            incoming().technicianUid == request.auth.uid &&
+            incoming().commessa == '' &&
+            incoming().stato == 'Preso in Carico' &&
+            'squadEmails' in incoming() &&
+            incoming().squadEmails.size() >= 1 &&
+            incoming().squadEmails.size() <= 10 &&
+            isInEmailList(incoming().squadEmails) &&
+            (!('technicianAliasEmails' in incoming()) || (
+              incoming().technicianAliasEmails.size() >= 1 &&
+              incoming().technicianAliasEmails.size() <= 10 &&
+              isInEmailList(incoming().technicianAliasEmails)
+            )) &&
+            (!('squadNames' in incoming()) || incoming().squadNames.size() == 1) &&
+            (!('squadDeliverableEmails' in incoming()) || (
+              incoming().squadDeliverableEmails.size() == 1 &&
+              isValidEmail(incoming().squadDeliverableEmails[0])
+            )) && (
+              (exists(/databases/$(database)/documents/tasks/$(incoming().taskId)) &&
+                get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.createdByUid == request.auth.uid &&
+                get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.pendingAdminReview == true) ||
+              (existsAfter(/databases/$(database)/documents/tasks/$(incoming().taskId)) &&
+                getAfter(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.createdByUid == request.auth.uid &&
+                getAfter(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.pendingAdminReview == true)
+            )
+          )
+        );
+      allow update: if isVerified() && isValidAssignment(incoming()) && isValidId(assignmentId) &&
+        incoming().assignmentId == existing().assignmentId &&
+        incoming().taskId == existing().taskId &&
+        (!('createdByUid' in existing()) || incoming().createdByUid == existing().createdByUid) &&
+        (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt) &&
+        incoming().updatedAt == request.time && (
+          (isAdmin() &&
+            (!('colorId' in incoming().diff(existing()).affectedKeys()) || isValidTaskColor(incoming().colorId)) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'assignmentCode', 'commessa', 'descrizioneTask', 'inizio', 'inizioMs', 'fine', 'fineMs',
+              'technicianEmail', 'technicianName', 'technicianUid', 'technicianAliasEmails', 'stato', 'noteTecnico',
+              'adminUids', 'squadEmails', 'squadNames', 'squadDeliverableEmails', 'colorId', 'updatedAt'
+            ])) ||
+          (isAssignmentOwnerDoc(existing()) &&
+            existing().stato != 'Completato' &&
+            existing().stato != 'Annullato' &&
+            incoming().stato in ['Assegnato', 'Preso in Carico', 'Completato'] &&
+            incoming().technicianUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'stato', 'noteTecnico', 'technicianUid', 'updatedAt'
+            ]))
+        );
+      allow delete: if isVerified() && isValidId(assignmentId) && isAdmin();
+    }
+
+    // 8. /usedMaterials/{usedId} (Materiali Utilizzati nei Task)
+    match /usedMaterials/{usedId} {
+      allow get: if isVerified() && isValidId(usedId) && (
+        isAdmin() ||
+        (resource != null && (
+          isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid) ||
+          ('squadEmails' in existing() && isInEmailList(existing().squadEmails))
+        ))
+      );
+      allow list: if isVerified() && (
+        isBootstrappedAdmin() ||
+        existing().technicianUid == request.auth.uid ||
+        isOwnEmailOrAlt(existing().technicianEmail) ||
+        ('squadEmails' in existing() && isInEmailList(existing().squadEmails)) ||
+        ('adminUids' in existing() && existing().adminUids is list && request.auth.uid in existing().adminUids)
+      );
+      allow create: if isVerified() && isValidId(usedId) && isValidUsedMaterial(incoming()) &&
+        isValidEmail(incoming().technicianEmail) &&
+        incoming().usedId == usedId &&
+        incoming().technicianUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/assignments/$(incoming().assignmentId)) &&
+        exists(/databases/$(database)/documents/articles/$(incoming().articleId)) && (
+          isAdmin() || (
+            incoming().technicianEmail == get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data.technicianEmail.lower() &&
+            isAssignmentOwnerDoc(get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data) &&
+            get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data.stato != 'Completato' &&
+            get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data.stato != 'Annullato'
+          )
+        );
+      allow update: if isVerified() && isValidUsedMaterial(incoming()) && isValidId(usedId) &&
+        incoming().usedId == existing().usedId &&
+        incoming().assignmentId == existing().assignmentId &&
+        incoming().taskId == existing().taskId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['commessa', 'quantita', 'adminUids', 'squadEmails', 'updatedAt'])) ||
+          (isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['quantita', 'updatedAt']) &&
+            get(/databases/$(database)/documents/assignments/$(existing().assignmentId)).data.stato != 'Completato' &&
+            get(/databases/$(database)/documents/assignments/$(existing().assignmentId)).data.stato != 'Annullato')
+        );
+      allow delete: if isVerified() && isValidId(usedId) && (
+        isAdmin() || (
+          isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid) &&
+          get(/databases/$(database)/documents/assignments/$(existing().assignmentId)).data.stato != 'Completato' &&
+          get(/databases/$(database)/documents/assignments/$(existing().assignmentId)).data.stato != 'Annullato'
+        )
+      );
+    }
+
+    // 9. /interventionPhotos/{photoId} (Foto Intervento archiviate su Google Drive)
+    match /interventionPhotos/{photoId} {
+      allow get: if isVerified() && isValidId(photoId) && (
+        isAdmin() ||
+        (resource != null && (
+          isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid) ||
+          ('squadEmails' in existing() && isInEmailList(existing().squadEmails))
+        ))
+      );
+      allow list: if isVerified() && (
+        isBootstrappedAdmin() ||
+        existing().technicianUid == request.auth.uid ||
+        isOwnEmailOrAlt(existing().technicianEmail) ||
+        ('squadEmails' in existing() && isInEmailList(existing().squadEmails)) ||
+        ('adminUids' in existing() && existing().adminUids is list && request.auth.uid in existing().adminUids)
+      );
+      allow create: if isVerified() && isValidId(photoId) && isValidInterventionPhoto(incoming()) &&
+        isValidEmail(incoming().technicianEmail) &&
+        incoming().photoId == photoId &&
+        incoming().technicianUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/assignments/$(incoming().assignmentId)) && (
+          isAdmin() || (
+            incoming().technicianEmail == get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data.technicianEmail.lower() &&
+            isAssignmentOwnerDoc(get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data) &&
+            get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data.stato != 'Assegnato' &&
+            get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data.stato != 'Completato' &&
+            get(/databases/$(database)/documents/assignments/$(incoming().assignmentId)).data.stato != 'Annullato'
+          )
+        );
+      allow update: if isVerified() && isValidInterventionPhoto(incoming()) && isValidId(photoId) &&
+        incoming().photoId == existing().photoId &&
+        incoming().assignmentId == existing().assignmentId &&
+        incoming().taskId == existing().taskId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'commessa', 'fileName', 'driveFileId', 'driveWebViewLink', 'driveThumbnailLink', 'driveSubfolderId',
+            'folderPath', 'ownerConsolidated', 'pendingCleanupFileId', 'squadEmails', 'adminUids', 'updatedAt'
+          ])) ||
+          (isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid) &&
+            incoming().pendingCleanupFileId == '' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['pendingCleanupFileId', 'updatedAt']))
+        );
+      allow delete: if isVerified() && isValidId(photoId) && (
+        isAdmin() || (
+          isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid) &&
+          get(/databases/$(database)/documents/assignments/$(existing().assignmentId)).data.stato != 'Completato' &&
+          get(/databases/$(database)/documents/assignments/$(existing().assignmentId)).data.stato != 'Annullato'
+        )
+      );
+    }
+
+    // 10. /absences/{absenceId} (Assenze Tecnici: Ferie, Permesso, Malattia, Altro)
+    match /absences/{absenceId} {
+      allow get: if isVerified() && isValidId(absenceId) && (
+        isAdmin() ||
+        (resource != null && isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid))
+      );
+      allow list: if isVerified() && (
+        isBootstrappedAdmin() ||
+        existing().technicianUid == request.auth.uid ||
+        isOwnEmailOrAlt(existing().technicianEmail) ||
+        ('adminUids' in existing() && existing().adminUids is list && request.auth.uid in existing().adminUids)
+      );
+      allow create: if isVerified() && isValidId(absenceId) && isValidAbsence(incoming()) &&
+        isValidEmail(incoming().technicianEmail) &&
+        incoming().absenceId == absenceId &&
+        incoming().createdByUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time && (
+          (isAdmin() && incoming().createdByRole == 'admin') ||
+          (incoming().createdByRole == 'technician' &&
+            (isOwnEmailOrAlt(incoming().technicianEmail) || isDirectoryVerifiedEmailForCaller(incoming().technicianEmail)) &&
+            incoming().technicianUid == request.auth.uid)
+        );
+      allow update: if isVerified() && isValidAbsence(incoming()) && isValidId(absenceId) &&
+        incoming().absenceId == existing().absenceId &&
+        incoming().createdByUid == existing().createdByUid &&
+        incoming().createdByRole == existing().createdByRole &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (isAdmin() && isValidEmail(incoming().technicianEmail) && incoming().diff(existing()).affectedKeys().hasOnly([
+            'technicianEmail', 'technicianName', 'technicianUid', 'tipo', 'allDay',
+            'inizio', 'inizioMs', 'fine', 'fineMs', 'note', 'adminUids', 'updatedAt'
+          ])) ||
+          (isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid) &&
+            (incoming().technicianUid == existing().technicianUid || incoming().technicianUid == request.auth.uid) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'tipo', 'allDay', 'inizio', 'inizioMs', 'fine', 'fineMs', 'note', 'technicianUid', 'updatedAt'
+            ]))
+        );
+      allow delete: if isVerified() && isValidId(absenceId) && (
+        isAdmin() ||
+        isTechnicianOwnerEmailOrUid(existing().technicianEmail, existing().technicianUid)
+      );
+    }
+
+    // 11. /pushSubscriptions/{subId} (Sottoscrizioni Web Push Dispositivi Admin — Zero PII)
+    match /pushSubscriptions/{subId} {
+      allow get: if isVerified() && isValidId(subId) && (
+        isAdmin() ||
+        (resource != null && (
+          existing().ownerUid == request.auth.uid ||
+          existing().active == true
+        ))
+      );
+      allow list: if isVerified() && (
+        existing().active == true ||
+        existing().ownerUid == request.auth.uid ||
+        isBootstrappedAdmin() ||
+        ('adminUids' in existing() && existing().adminUids is list && request.auth.uid in existing().adminUids)
+      );
+      allow create: if isVerified() && isValidId(subId) && isValidPushSubscription(incoming()) &&
+        incoming().subId == subId &&
+        incoming().ownerUid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+      allow update: if isVerified() && isValidPushSubscription(incoming()) && isValidId(subId) &&
+        incoming().subId == existing().subId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (incoming().ownerUid == existing().ownerUid || incoming().ownerUid == request.auth.uid) &&
+        isAdmin() &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'ownerUid', 'endpoint', 'p256dh', 'auth', 'deviceLabel', 'active', 'adminUids', 'updatedAt'
+        ]);
+      allow delete: if isVerified() && isValidId(subId) && isAdmin();
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Gestione Interventi SITE",
+  "description": "Portale Web Admin e App Mobile Android PWA per la gestione interventi, squadre tecniche, materiali utilizzati e foto di cantiere del gruppo Apparati SITE Bologna.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

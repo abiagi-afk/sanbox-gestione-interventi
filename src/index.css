@@ -1,0 +1,355 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background-color: #f8fafc;
+    color: #0f172a;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+/* Google Calendar Operator Palette & Status Motifs (Border / Solid / Diagonal Stripes) */
+.gcal-theme-peacock {
+  --gcal-swatch: #039be5;
+  --gcal-border: #039be5;
+  --gcal-outline-bg: #f5fbff;
+  --gcal-outline-hover: #e6f6ff;
+  --gcal-outline-text: #0369a1;
+  --gcal-solid-bg: #0277bd;
+  --gcal-solid-hover: #01649f;
+  --gcal-stripe-a: #0288d1;
+  --gcal-stripe-b: #01579b;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-cobalt {
+  --gcal-swatch: #1a73e8;
+  --gcal-border: #1a73e8;
+  --gcal-outline-bg: #f5f9ff;
+  --gcal-outline-hover: #eaf2ff;
+  --gcal-outline-text: #185abc;
+  --gcal-solid-bg: #1967d2;
+  --gcal-solid-hover: #1557b0;
+  --gcal-stripe-a: #1a73e8;
+  --gcal-stripe-b: #1557b0;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-banana {
+  --gcal-swatch: #f6bf26;
+  --gcal-border: #eab308;
+  --gcal-outline-bg: #fffdf5;
+  --gcal-outline-hover: #fef9c3;
+  --gcal-outline-text: #854d0e;
+  --gcal-solid-bg: #fde047;
+  --gcal-solid-hover: #facc15;
+  --gcal-stripe-a: #fde047;
+  --gcal-stripe-b: #f59e0b;
+  --gcal-filled-text: #451a03;
+}
+
+.gcal-theme-tomato {
+  --gcal-swatch: #d50000;
+  --gcal-border: #d93025;
+  --gcal-outline-bg: #fff7f6;
+  --gcal-outline-hover: #ffebe9;
+  --gcal-outline-text: #b31412;
+  --gcal-solid-bg: #c5221f;
+  --gcal-solid-hover: #a50e0e;
+  --gcal-stripe-a: #d93025;
+  --gcal-stripe-b: #9e1212;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-basil {
+  --gcal-swatch: #0b8043;
+  --gcal-border: #0b8043;
+  --gcal-outline-bg: #f4fbf7;
+  --gcal-outline-hover: #e6f6ed;
+  --gcal-outline-text: #0d652d;
+  --gcal-solid-bg: #0b8043;
+  --gcal-solid-hover: #096b38;
+  --gcal-stripe-a: #0f9d58;
+  --gcal-stripe-b: #0b6e3a;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-grape {
+  --gcal-swatch: #8e24aa;
+  --gcal-border: #8e24aa;
+  --gcal-outline-bg: #fcf6ff;
+  --gcal-outline-hover: #f5e8ff;
+  --gcal-outline-text: #6a1b9a;
+  --gcal-solid-bg: #7b1fa2;
+  --gcal-solid-hover: #6a1b9a;
+  --gcal-stripe-a: #8e24aa;
+  --gcal-stripe-b: #641791;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-flamingo {
+  --gcal-swatch: #d81b60;
+  --gcal-border: #d81b60;
+  --gcal-outline-bg: #fff5f9;
+  --gcal-outline-hover: #ffe6f0;
+  --gcal-outline-text: #ad1457;
+  --gcal-solid-bg: #c2185b;
+  --gcal-solid-hover: #a3134b;
+  --gcal-stripe-a: #d81b60;
+  --gcal-stripe-b: #9c1449;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-tangerine {
+  --gcal-swatch: #f4511e;
+  --gcal-border: #f4511e;
+  --gcal-outline-bg: #fff8f5;
+  --gcal-outline-hover: #ffede5;
+  --gcal-outline-text: #bf360c;
+  --gcal-solid-bg: #d54315;
+  --gcal-solid-hover: #b8370f;
+  --gcal-stripe-a: #e64a19;
+  --gcal-stripe-b: #b2340b;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-sage {
+  --gcal-swatch: #33b679;
+  --gcal-border: #26a669;
+  --gcal-outline-bg: #f4fcf8;
+  --gcal-outline-hover: #e5f7ee;
+  --gcal-outline-text: #137333;
+  --gcal-solid-bg: #1e8e5a;
+  --gcal-solid-hover: #177549;
+  --gcal-stripe-a: #26a669;
+  --gcal-stripe-b: #167347;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-lavender {
+  --gcal-swatch: #7986cb;
+  --gcal-border: #5c6bc0;
+  --gcal-outline-bg: #f6f7fe;
+  --gcal-outline-hover: #ebedfc;
+  --gcal-outline-text: #3949ab;
+  --gcal-solid-bg: #5c6bc0;
+  --gcal-solid-hover: #4958ad;
+  --gcal-stripe-a: #6877c9;
+  --gcal-stripe-b: #3f51b5;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-theme-graphite {
+  --gcal-swatch: #616161;
+  --gcal-border: #64748b;
+  --gcal-outline-bg: #f8fafc;
+  --gcal-outline-hover: #f1f5f9;
+  --gcal-outline-text: #334155;
+  --gcal-solid-bg: #4b5563;
+  --gcal-solid-hover: #374151;
+  --gcal-stripe-a: #525e6e;
+  --gcal-stripe-b: #374151;
+  --gcal-filled-text: #ffffff;
+}
+
+.gcal-swatch-fill {
+  background-color: var(--gcal-swatch, #039be5);
+}
+
+.gcal-motif-outline {
+  background-color: var(--gcal-outline-bg, #f5fbff);
+  border-color: var(--gcal-border, #039be5);
+  color: var(--gcal-outline-text, #0369a1);
+}
+
+.gcal-motif-outline:hover {
+  background-color: var(--gcal-outline-hover, #e6f6ff);
+}
+
+.gcal-motif-solid {
+  background-color: var(--gcal-solid-bg, #0277bd);
+  border-color: var(--gcal-stripe-b, #01579b);
+  color: var(--gcal-filled-text, #ffffff);
+}
+
+.gcal-motif-solid:hover {
+  background-color: var(--gcal-solid-hover, #01649f);
+}
+
+.gcal-motif-striped {
+  background-color: var(--gcal-solid-bg, #0277bd);
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--gcal-stripe-a, #0288d1),
+    var(--gcal-stripe-a, #0288d1) 6px,
+    var(--gcal-stripe-b, #01579b) 6px,
+    var(--gcal-stripe-b, #01579b) 12px
+  );
+  border-color: var(--gcal-stripe-b, #01579b);
+  color: var(--gcal-filled-text, #ffffff);
+}
+
+.gcal-motif-striped:hover {
+  filter: brightness(0.96);
+}
+
+/* Official Google Material Sign-In Button */
+.gsi-material-button {
+  -moz-user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  -webkit-appearance: none;
+  background-color: #ffffff;
+  background-image: none;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+  color: #0f172a;
+  cursor: pointer;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  height: 48px;
+  letter-spacing: 0.15px;
+  outline: none;
+  overflow: hidden;
+  padding: 0 16px;
+  position: relative;
+  text-align: center;
+  transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  vertical-align: middle;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.gsi-material-button:hover:not(:disabled) {
+  background-color: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.gsi-material-button:disabled {
+  cursor: default;
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
+  opacity: 0.65;
+}
+
+.gsi-material-button .gsi-material-button-content-wrapper {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  height: 100%;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  gap: 8px;
+}
+
+.gsi-material-button .gsi-material-button-icon {
+  height: 20px;
+  min-width: 20px;
+  width: 20px;
+}
+
+/* Fluid Motion System - GPU accelerated, cubic-bezier(0.16, 1, 0.3, 1) */
+@keyframes fluidPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes fluidSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fluidSheetUp {
+  0% {
+    transform: translateY(100%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fluidFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.animate-fluid-pop {
+  animation: fluidPopIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+.animate-fluid-slide {
+  animation: fluidSlideUp 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+.animate-fluid-sheet {
+  animation: fluidSheetUp 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform;
+}
+
+.animate-fluid-fade {
+  animation: fluidFadeIn 180ms ease-out both;
+  will-change: opacity;
+}
+
+/* Micro-interaction interactive classes */
+.interactive-card {
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms ease-out;
+}
+.interactive-card:hover {
+  transform: translateY(-1.5px);
+}
+.interactive-card:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.interactive-press {
+  transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), opacity 140ms ease-out;
+}
+.interactive-press:active {
+  transform: scale(0.975);
+}
+
+.interactive-tab {
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
