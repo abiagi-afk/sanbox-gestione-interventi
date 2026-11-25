@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono';
-import type { Pool, PoolClient } from '@neondatabase/serverless';
+import type { D1Pool as Pool, D1PoolClient as PoolClient } from './d1Db.ts';
 import {
   ABSENCE_TYPES,
   areSameTechnicianEmails,
@@ -47,7 +47,7 @@ import type {
   UserRole,
 } from '../types/siteHelpers.ts';
 import {
-  getReadyNeonPool,
+  getReadyD1Pool,
   mapAbsenceRow,
   mapArticleRow,
   mapAssignmentRow,
@@ -59,8 +59,7 @@ import {
   mapTaskRow,
   mapUsedMaterialRow,
   mapUserRow,
-  resolveNeonConnectionString,
-} from './neonDb.ts';
+} from './d1Db.ts';
 
 export interface VerifiedServerUser {
   uid: string;
@@ -469,109 +468,93 @@ export function createDataRouter(params: {
   // ---------------------------------------------------------------------------
   // Database Connection Status (Zero secrets exposed)
   // ---------------------------------------------------------------------------
-  router.get('/status', async (req, res) => {
-    const cfg = resolveNeonConnectionString();
-    if (!cfg.configured) {
+router.get('/status', async (req, res) => {
+  try {
+    const pool = await getReadyD1Pool();
+    if (!pool) {
       res.json({
         configured: false,
         connected: false,
-        hostHint: '',
+        hostHint: 'Cloudflare D1 (binding DB mancante)',
       });
       return;
     }
+    await pool.query('SELECT 1');
 
-    try {
-      const pool = await getReadyNeonPool();
-      if (!pool) {
-        res.json({ configured: false, connected: false, hostHint: '' });
-        return;
-      }
-      await pool.query('SELECT 1');
+    let counts:
+      | {
+          directory: number;
+          articles: number;
+          tasks: number;
+          assignments: number;
+        }
+      | undefined;
 
-      let counts:
-        | {
-            directory: number;
-            articles: number;
-            tasks: number;
-            assignments: number;
-          }
-        | undefined;
-
-      const verified = await verifyBearerToken(req.headers.authorization);
-      if (verified) {
-        const countRes = await pool.query(`
-          SELECT
-            (SELECT COUNT(*)::int FROM site_directory) AS directory_count,
-            (SELECT COUNT(*)::int FROM site_articles) AS articles_count,
-            (SELECT COUNT(*)::int FROM site_tasks) AS tasks_count,
-            (SELECT COUNT(*)::int FROM site_assignments) AS assignments_count
-        `);
-        const r = countRes.rows[0] || {};
-        counts = {
-          directory: Number(r.directory_count || 0),
-          articles: Number(r.articles_count || 0),
-          tasks: Number(r.tasks_count || 0),
-          assignments: Number(r.assignments_count || 0),
-        };
-      }
-
-      res.json({
-        configured: true,
-        connected: true,
-        hostHint: cfg.hostHint,
-        ...(counts ? { counts } : {}),
-      });
-    } catch (err: unknown) {
-      const rawMsg = err instanceof Error ? err.message : String(err);
-      res.status(200).json({
-        configured: true,
-        connected: false,
-        hostHint: cfg.hostHint,
-        code: 'NEON_CONNECTION_ERROR',
-        error: `Impossibile connettersi al database PostgreSQL Neon (${cfg.hostHint}): ${rawMsg}`,
-      });
-    }
-  });
-
-  // Middleware requiring authenticated Firebase Google user + ready Neon pool
-  async function requireAuthAndDb(
-    req: AdaptedRequest,
-    res: AdaptedResponse
-  ): Promise<{ pool: Pool; user: VerifiedServerUser } | null> {
     const verified = await verifyBearerToken(req.headers.authorization);
-    if (!verified) {
-      res.status(401).json({ error: 'Autenticazione Google richiesta.' });
-      return null;
+    if (verified) {
+      const countRes = await pool.query(`
+        SELECT
+          (SELECT COUNT(*) FROM site_directory) AS directory_count,
+          (SELECT COUNT(*) FROM site_articles) AS articles_count,
+          (SELECT COUNT(*) FROM site_tasks) AS tasks_count,
+          (SELECT COUNT(*) FROM site_assignments) AS assignments_count
+      `);
+      const r = countRes.rows[0] || {};
+      counts = {
+        directory: Number(r.directory_count || 0),
+        articles: Number(r.articles_count || 0),
+        tasks: Number(r.tasks_count || 0),
+        assignments: Number(r.assignments_count || 0),
+      };
     }
-    const cfg = resolveNeonConnectionString();
-    if (!cfg.configured) {
+
+    res.json({
+      configured: true,
+      connected: true,
+      hostHint: 'Cloudflare D1 (SQLite Edge)',
+      ...(counts ? { counts } : {}),
+    });
+  } catch (err: unknown) {
+    const rawMsg = err instanceof Error ? err.message : String(err);
+    res.status(200).json({
+      configured: true,
+      connected: false,
+      hostHint: 'Cloudflare D1 (SQLite Edge)',
+      code: 'NEON_CONNECTION_ERROR',
+      error: `Errore database Cloudflare D1: ${rawMsg}`,
+    });
+  }
+});
+
+async function requireAuthAndDb(
+  req: AdaptedRequest,
+  res: AdaptedResponse
+): Promise<{ pool: Pool; user: VerifiedServerUser } | null> {
+  const verified = await verifyBearerToken(req.headers.authorization);
+  if (!verified) {
+    res.status(401).json({ error: 'Autenticazione Google richiesta.' });
+    return null;
+  }
+  try {
+    const pool = await getReadyD1Pool();
+    if (!pool) {
       res.status(500).json({
         code: 'NEON_NOT_CONFIGURED',
         error:
-          'Database PostgreSQL Neon in attesa di configurazione (segreto NEON_DATABASE_URL su AI Studio).',
+          'Database Cloudflare D1 non collegato (aggiungi binding D1 con nome variabile DB su Cloudflare).',
       });
       return null;
     }
-    try {
-      const pool = await getReadyNeonPool();
-      if (!pool) {
-        res.status(500).json({
-          code: 'NEON_NOT_CONFIGURED',
-          error:
-            'Database PostgreSQL Neon in attesa di configurazione (segreto NEON_DATABASE_URL su AI Studio).',
-        });
-        return null;
-      }
-      return { pool, user: verified.user };
-    } catch (err: unknown) {
-      const rawMsg = err instanceof Error ? err.message : String(err);
-      res.status(500).json({
-        code: 'NEON_CONNECTION_ERROR',
-        error: `Errore connessione database PostgreSQL Neon: ${rawMsg}`,
-      });
-      return null;
-    }
+    return { pool, user: verified.user };
+  } catch (err: unknown) {
+    const rawMsg = err instanceof Error ? err.message : String(err);
+    res.status(500).json({
+      code: 'NEON_CONNECTION_ERROR',
+      error: `Errore connessione Cloudflare D1: ${rawMsg}`,
+    });
+    return null;
   }
+}
 
   // ---------------------------------------------------------------------------
   // 1. User Bootstrap & Directory Linking
@@ -817,37 +800,37 @@ export function createDataRouter(params: {
     }
   });
 
-  async function queryWorkspaceVersion(pool: Pool): Promise<string> {
-    const versionRes = await pool.query(`
-      SELECT CONCAT_WS(':',
-        GREATEST(
-          COALESCE((SELECT MAX(updated_at) FROM site_tasks), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_assignments), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_used_materials), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_intervention_photos), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_absences), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_on_call_shifts), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_on_call_overrides), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_directory), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_articles), '1970-01-01'::timestamptz),
-          COALESCE((SELECT MAX(updated_at) FROM site_settings), '1970-01-01'::timestamptz)
-        )::text,
-        (
-          (SELECT COUNT(*) FROM site_tasks) +
-          (SELECT COUNT(*) FROM site_assignments) +
-          (SELECT COUNT(*) FROM site_used_materials) +
-          (SELECT COUNT(*) FROM site_intervention_photos) +
-          (SELECT COUNT(*) FROM site_absences) +
-          (SELECT COUNT(*) FROM site_on_call_shifts) +
-          (SELECT COUNT(*) FROM site_on_call_overrides) +
-          (SELECT COUNT(*) FROM site_directory) +
-          (SELECT COUNT(*) FROM site_articles)
-        )::text
-      ) AS version
-    `);
-    const row = versionRes.rows[0] as { version?: string } | undefined;
-    return String(row?.version || '');
-  }
+async function queryWorkspaceVersion(pool: Pool): Promise<string> {
+  const versionRes = await pool.query(`
+    SELECT (
+      MAX(
+        COALESCE((SELECT MAX(updated_at) FROM site_tasks), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_assignments), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_used_materials), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_intervention_photos), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_absences), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_on_call_shifts), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_on_call_overrides), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_directory), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_articles), '1970-01-01T00:00:00.000Z'),
+        COALESCE((SELECT MAX(updated_at) FROM site_settings), '1970-01-01T00:00:00.000Z')
+      ) || ':' ||
+      CAST((
+        (SELECT COUNT(*) FROM site_tasks) +
+        (SELECT COUNT(*) FROM site_assignments) +
+        (SELECT COUNT(*) FROM site_used_materials) +
+        (SELECT COUNT(*) FROM site_intervention_photos) +
+        (SELECT COUNT(*) FROM site_absences) +
+        (SELECT COUNT(*) FROM site_on_call_shifts) +
+        (SELECT COUNT(*) FROM site_on_call_overrides) +
+        (SELECT COUNT(*) FROM site_directory) +
+        (SELECT COUNT(*) FROM site_articles)
+      ) AS TEXT)
+    ) AS version
+  `);
+  const row = versionRes.rows[0] as { version?: string } | undefined;
+  return String(row?.version || '');
+}
 
   // ---------------------------------------------------------------------------
   // 1b. Lightweight Workspace Version Check (prevents redundant full snapshots)
