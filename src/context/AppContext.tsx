@@ -501,7 +501,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!disposed && document.visibilityState === 'visible') {
         scheduleRefresh(50, false);
       }
-    }, 25_000);
+    }, 3_000);
 
     const handleVisibilityOrOnline = () => {
       if (document.visibilityState === 'visible') {
