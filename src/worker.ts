@@ -8,7 +8,7 @@ import {
   isVerifiedAdminInNeon,
   markEmailOutboxError,
   markEmailOutboxSent,
-  runWithNeonContext,
+  runWithD1Context,
 } from './server/d1Db.ts';
 
 export interface WorkerEnv {
